@@ -1,1 +1,226 @@
 # DataAnalysing
+#task1
+
+#install
+install.packages("knitr")
+install.packages("data.table")
+install.packages("ggplot2")
+install.packages("ggmosaic")
+install.packages("readr")
+
+library(knitr)
+library(data.table)
+library(ggplot2)
+library(ggmosaic)
+library(readr)
+
+#Set file
+filePath <- "C:/Users/ASUS ROG/Downloads/"
+filePath
+
+#read the transaction data
+transactionData <- fread(paste0(filePath,"QVI_transaction_data.csv"))
+customerData <- fread(paste0(filePath, "QVI_purchase_behaviour.csv"))
+
+###Examine the structure of the transaction data
+str(transactionData)
+
+#print the first 10 rows
+head(transactionData,10)
+
+#Convert DATE column to a date format
+install.packages("lubridate")
+library(lubridate)
+transactionData$date<-ymd(df$date)
+transactionData
+
+summary(transactionData$PROD_NAME)
+productWords <- data.table(unlist(strsplit(unique(transactionData[, PROD_NAME]), " ")))
+setnames(productWords, 'words')
+
+productWords <- productWords[!grepl("[0-9&]", words)]
+wordFreq <- productWords[, .N, by = words][order(-N)]
+print(wordFreq)
+
+transactionData[, SALSA := grepl("salsa", tolower(PROD_NAME))]
+transactionData <- transactionData[SALSA == FALSE, ][, SALSA := NULL]
+
+# Summarise the data to check for nulls and possible outliers
+summary(transactionData)
+
+#Filter the dataset to find the outlier
+outlierTransactions <- transactionData[QUANTITY == 200]
+print(outlierTransactions)
+
+#Extract the customer ID(s)
+customerIDs <- unique(outlierTransactions$CUSTOMER_ID)
+
+#Filter the dataset for the customers
+customerTransactions <- transactionData[CUSTOMER_ID %in% customerIDs]
+print(customerTransactions)
+
+# Filter out the customer based on the loyalty card number
+transactionData <- transactionData[!(CUSTOMER_ID %in% customerIDs)]
+
+#Recheck
+summary(transactionData)
+
+#Count the number of transactions by date
+transactions_by_day %>%
+  summarise(count=n(),.by=Date)
+print(transactions_by_day)
+
+# Create a sequence of dates 
+column_dates<-data.table(DATE=seq.Date(from=as.Date("2018-07-01"), to= as.Data("2019-06-01")))
+
+#Setting plot themes
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5))
+
+#Plot transactions over time
+ggplot(transactions_by_day, aes(x = DATE, y = N)) +
+  geom_line() +
+  labs(x = "Day", y = "Number of transactions", title = "Transactions over time") +
+  scale_x_date(breaks = "1 month") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+#Filter to December 
+december_data <- transactionData[format(DATE, "%m") == "12"]
+
+# Count transactions by day in December
+transactions_december <- december_data[, .N, by = DATE]
+
+# Plot the data for December
+ggplot(transactions_december, aes(x = DATE, y = N)) +
+  geom_line() +
+  labs(x = "Date", y = "Number of Transactions", title = "Transactions in December") +
+  scale_x_date(date_breaks = "1 day", date_labels = "%d") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+# Extract pack size from PROD_NAME
+transactionData[, PACK_SIZE := parse_number(PROD_NAME)]
+
+# Check the pack sizes
+transactionData[, .N, by = PACK_SIZE][order(PACK_SIZE)]
+
+# Plot a histogram of PACK_SIZE
+ggplot(transactionData, aes(x = PACK_SIZE)) +
+  geom_histogram(bins = 20, fill = "skyblue", color = "black") +
+  labs(x = "Pack Size", y = "Number of Transactions", title = "Histogram of Pack Sizes") +
+  theme_minimal()
+
+##BRANDS
+#Create a column
+library(stringr)
+transactionData[, BRAND_NAME := word(PROD_NAME, 1)]
+
+#Checking the results
+transactionData[, .N, by = BRAND_NAME][order(-N)]
+
+#Clean duplicate brands:
+transactionData[BRAND == "RED", BRAND := "RRD"]
+transactionData[BRAND == "NCC", BRAND := "Natural"]
+transactionData[BRAND == "WW", BRAND := "Woolworths"]
+transactionData[BRAND == "SMITH", BRAND := "Smiths"]
+
+#Recheck:
+transactionData[, .N, by = BRAND][order(-N)]
+
+###Examine customer data:
+str(customerData)
+summary(customerData)
+head(customerData)
+
+#Distributions of key columns:
+library(ggplot2)
+ggplot(customerData,aes(x=LIFESTAGE))+
+  geom_bar(fill="orange",color="darkblue")+
+  labs(x="LIFESTAGE",y="count", title="Distribution of LIFESTAGE")
+
+ggplot(customerData, aes(x=PREMIUM_CUSTOMER))+
+  geom_bar(fill="beige",color="turquoise")+
+  lab(x="PREMIUM CUSTOMER",y="count", titile="Distribution of Premium Customers")\
+
+###Merge transaction data to customer data
+data <- merge(transactionData, customerData, all.x = TRUE)
+
+#Check the structure and summary of the merged data
+str(data)
+summary(data)
+
+#Transaction did not have a matched customer
+missing_customers <- data[is.na(LIFESTAGE) | is.na(PREMIUM_CUSTOMER)]
+summary(missing_customers)
+readln(missing_customers)
+
+#Save as a CSV
+fwrite(data, paste0(filePath, "QVI_data.csv"))
+
+##Total Sales by LIFESTAGE and PREMIUM_CUSTOMER
+total_sales <- data[, .(TOTAL_SALES = sum(TOT_SALES)), by = .(LIFESTAGE, PREMIUM_CUSTOMER)]
+
+#plot
+ggplot(total_sales, aes(x = LIFESTAGE, y = TOTAL_SALES, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Lifestage", y = "Total Sales", title = "Total Sales by Lifestage and Premium Customer") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+##Total customers:
+num_customers <- data[, .N, by = .(LIFESTAGE, PREMIUM_CUSTOMER)]
+#plot
+ggplot(num_customers, aes(x = LIFESTAGE, y = N, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Lifestage", y = "Number of Customers", title = "Number of Customers by Lifestage and Premium Customer") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+##Average Units bought
+avg_units <- data[, .(AVG_UNITS = mean(PROD_QTY)), by = .(LIFESTAGE, PREMIUM_CUSTOMER)]
+#plot
+ggplot(avg_units, aes(x = LIFESTAGE, y = AVG_UNITS, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Lifestage", y = "Average Number of Units", title = "Average Number of Units per Customer by Lifestage and Premium Customer") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+##Average Price per Unit:
+avg_price <- data[, .(AVG_PRICE = mean(TOT_SALES / PROD_QTY)), by = .(LIFESTAGE, PREMIUM_CUSTOMER)]
+#Plot
+ggplot(avg_price, aes(x = LIFESTAGE, y = AVG_PRICE, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Lifestage", y = "Average Price per Unit", title = "Average Price per Unit by Lifestage and Premium Customer") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#Test for price differences:
+#T-test between mainstream vs premium and budget mid-age/couples and young single/couples
+mainstream_prices <- data[PREMIUM_CUSTOMER == "Mainstream" & (LIFESTAGE == "YOUNG SINGLES/COUPLES" | LIFESTAGE == "MIDAGE SINGLES/COUPLES"), TOT_SALES / PROD_QTY]
+other_prices <- data[(PREMIUM_CUSTOMER == "Budget" | PREMIUM_CUSTOMER == "Premium") & (LIFESTAGE == "YOUNG SINGLES/COUPLES" | LIFESTAGE == "MIDAGE SINGLES/COUPLES"), TOT_SALES / PROD_QTY]
+
+t_test_result <- t.test(mainstream_prices, other_prices)
+t_test_result$p.value
+
+{r fig.width = 10, fig.align = "center"}
+
+#Filter data for Mainstream Young Singles/Couples
+mainstream_young <- data[LIFESTAGE == "YOUNG SINGLES/COUPLES" & PREMIUM_CUSTOMER == "Mainstream"]
+
+#Number of transaction by brand
+brand_trans<-mainstream_young[,.N,by=BRAND][order(-N)]
+
+#plot
+ggplot(brand_trans, aes(x = reorder(BRAND, -N), y = N, fill = BRAND)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Brand", y = "Number of Transactions", title = "Preferred Brands for Mainstream Young Singles/Couples") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+{r fig.width = 10, fig.align = "center"}
+
+#Number of transact by PACK SIZE Mainstream Young Singles/Couples
+pack_size_preference <- mainstream_young[, .N, by = PACK_SIZE][order(-N)]
+
+#Plot
+ggplot(pack_size_preference, aes(x = reorder(PACK_SIZE, -N), y = N, fill = as.factor(PACK_SIZE))) +
+  geom_bar(stat = "identity") +
+  labs(x = "Pack Size (g)", y = "Number of Transactions", title = "Preferred Pack Sizes for Mainstream Young Singles/Couples") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
